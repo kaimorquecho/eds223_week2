@@ -1,0 +1,195 @@
+---
+title: "eds223_week2"
+format: html
+---
+
+```{r}
+rm(list = ls()) # will clear our environment of all objects
+
+library(sf)
+library(tidyverse)
+library(spData)
+library(tmap)
+```
+
+
+```{r}
+london_point <- st_point(c(0.1,51.5)) # longitude and latitude, simple feature point
+
+london_geom <- st_sfc(london_point, crs = 4326) # simple feature geometry column, CRS is coordinate reference system
+
+london_attrib <- data.frame(
+  name = "London",
+  temperature = 25,
+  data = as.Date("2017-06-21")
+)
+
+london_sf <- st_sf(london_attrib, geometry = london_geom) # simple feature OBJECT that brings together simple feature geometry + simple feature geom colum 
+
+class(london_sf) # this is a critical check! a thing to do in our hw
+
+st_crs(london_sf)$IsGeographic # to check if we have a geographic objecT?
+```
+
+```{r}
+world <- spData::world
+
+names(world)
+
+summary(world$lifeExp)
+```
+```{r}
+world_df <- world %>%
+  select(-geom) # trying to remove the simple feature geometry column and turn world into just a data frame not a simple feature object
+
+world_df <- world %>%
+  select(continent)
+
+colnames(world_df) # it is very sticky, hard to get rid of. 
+
+```
+
+```{r} 
+world_df <- st_drop_geometry(world) # there is specific function to delete the geom column 
+
+class(world_df) # now geom column is gone
+
+
+```
+ 
+# Reprojecting Data
+
+```{r}
+london_proj <- data.frame(x = 53000, y = 180000) %>%
+  st_as_sf(coords = c("x","y"), crs = "EPSG:27700")  # here is an authority:code 
+# st_as_sf is to read in 
+# CRSs or coordinate reference systems can be described in 2 main ways: simple but ambiguous statements of lat and long (which does not work in R ) OR with identifying authority:code text string. 
+
+st_crs(london_proj) == st_crs(london_sf) # a conditional check. we are seeing if we successfully created a simple feature object. We did not.
+
+london_sf_transform <- st_transform(london_sf, crs = st_crs(london_proj))
+```
+
+```{r}
+if(st_crs(london_sf_transform) == st_crs(london_proj)) {
+  print("coordinate reference systems of datasets match")
+} else {
+  error("coordinate reference systems do not match")
+}
+```
+
+```{r}
+tm_shape(world, projection = 8857) +
+  tm_fill(col = "area_km2")
+```
+
+```{r}
+tm_shape(world, projection = 3395) + # trying a diff projection. 
+  tm_fill(col = "area_km2")
+
+```
+
+## Vector attribute subsetting
+
+```{r}
+
+# dplyr select 
+
+world %>%
+  select(name_long, pop) # even if we do not select the geom column, it will always keep it for us unless we use special function to remove it 
+
+world %>% 
+  select(-subregion)
+
+world %>%
+  select(name = name_long, population = pop)
+```
+
+
+```{r}
+world <- world %>%
+  filter(area_km2 < 10000)
+
+```
+
+```{r}
+world %>% 
+  filter(continent == "Asia") %>%
+  select(name_long, continent, lifeExp) %>%
+  slice_max(lifeExp) %>% # it gives you a slice of the object where life expectancy is at its highest 
+  st_drop_geometry() # special function
+```
+
+
+```{r}
+world %>%
+  group_by(continent) %>%
+  summarise(population = sum(pop, na.rm = TRUE)) %>%
+  st_drop_geometry()
+```
+
+# Joins with vector attributes
+
+```{r}
+coffee_data <- spData::coffee_data
+
+nrow(coffee_data)
+nrow(world)
+```
+
+```{r}
+# we will use a left join 
+world_coffee <- left_join(world, coffee_data, by = "name_long") # we are joining based on geometries. 
+```
+
+
+```{r}
+tm_shape(world_coffee) +
+  tm_fill(col = "coffee_production_2017")
+```
+
+```{r}
+world_coffee_inner <- inner_join(world, coffee_data, by = "name_long")
+
+if(nrow(world_coffee_inner) < nrow(coffee_data)) {
+  warning("inner join does not match original data. potential data loss during join")
+}
+```
+
+```{r}
+setdiff(coffee_data$name_long, world$name_long) # to see what is different between our two data sets after join. we want to keep "congo, dem.rep of"
+```
+
+```{r}
+# let's try to salvage that piece of congo data
+
+drc<- stringr::str_subset(world$name_long,"Dem*.+Congo")
+
+coffee_data$name_long[stringr::str_detect(coffee_data$name_long, "Congo")] <- drc
+
+world_coffee_iner <- inner_join(world, coffee_data, by = "name_long")
+
+if(nrow(world_coffee_inner) < nrow(coffee_data)) {
+  warning("inner join does not match original data. potential data loss during join")
+}
+
+```
+
+```{r}
+tm_shape(world_coffee_inner) +
+  tm_polygons(fill = "coffee_production_2017",
+              title = "Coffee production (2017)") +
+  tm_layout(legend.outside = TRUE)
+```
+
+
+```{r}
+coffee_world <- left_join(coffee_data, world, by = "name_long")
+class(coffee_world)
+```
+
+
+
+
+
+
